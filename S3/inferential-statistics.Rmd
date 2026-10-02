@@ -1,0 +1,291 @@
+---
+title: "Inferential statistics with behavioural inhibition data"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## From a sample to a population
+
+In the first practical, we looked at stop-signal reaction times (SSRTs) for the
+58 participants in Paál et al. (2015). A longer SSRT means slower inhibition.
+Now we want to ask what these observations might tell us about people beyond
+this study. The **sample** is the participants we measured; a **population**
+is the wider group about which we want to learn. A population quantity, such
+as its mean SSRT, is a **parameter**. The sample mean is an **estimate** of it.
+
+We are using the same data as last week. 
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+
+d <- read_csv(
+  "https://dfzljdn9uc3pi.cloudfront.net/2015/964/1/data_supplement.csv",
+  show_col_types = FALSE
+) %>%
+  rename(Participant = 1) %>%
+  mutate(Condition = factor(
+    Mood_induction_condition,
+    levels = c(2, 1),
+    labels = c("Neutral", "Negative")
+  ))
+
+d %>% select(Participant, Age, Condition, SSRT) %>% slice_head(n = 6)
+```
+
+### Practice 1
+
+The sample contains 58 participants. Name a wider population you might
+reasonably want to learn about. Is `mean(d$SSRT)` a sample statistic or a
+population parameter?
+
+## Repeated samples and the central limit theorem
+
+Imagine taking many independent samples of the same size and calculating a
+mean SSRT from each. Those means form a **sampling distribution**. We cannot
+recruit many new groups here, so we will simulate sampling *with replacement*
+from the 58 observed SSRTs. For this simulation, their distribution stands in
+for a population; it does not establish that the study represents all adults.
+
+`slice_sample()` draws rows; `map_dbl()` repeats the calculation and stores one
+mean from each sample. The seed lets everyone get the same simulation.
+
+The central limit theorem explains why the distribution of sample means
+approaches a Normal shape as sample size grows, under suitable conditions,
+even when individual observations are not Normal.
+
+```{r}
+d_ssrt <- d %>% filter(!is.na(SSRT))
+ssrt <- d_ssrt %>% pull(SSRT)
+set.seed(2026)
+means_5 <- map_dbl(1:1000, ~ d_ssrt %>%
+  slice_sample(n = 5, replace = TRUE) %>%
+  summarise(mean_SSRT = mean(SSRT)) %>% pull(mean_SSRT))
+means_30 <- map_dbl(1:1000, ~ d_ssrt %>%
+  slice_sample(n = 30, replace = TRUE) %>%
+  summarise(mean_SSRT = mean(SSRT)) %>% pull(mean_SSRT))
+
+sampling_means <- tibble(
+  mean_SSRT = c(means_5, means_30),
+  sample_size = factor(rep(c(5, 30), each = 1000))
+)
+
+ggplot(sampling_means, aes(x = mean_SSRT)) +
+  geom_histogram(binwidth = 5, colour = "white") +
+  facet_wrap(~ sample_size) +
+  labs(x = "Sample mean SSRT (ms)", y = "Number of samples",
+       title = "Sampling distributions for two sample sizes")
+```
+
+### Practice 2
+
+Compare the two samples: which set of means varies more? 
+
+```{r}
+### YOUR CODE HERE ###
+```
+
+## Standard error: how much an estimate varies
+
+The **standard deviation** (SD) describes variation among individual SSRTs.
+The **standard error** (SE) describes variation among estimates from repeated
+samples. For a sample mean, we estimate it from one sample using
+
+$$SE(\bar{x}) = \frac{s}{\sqrt{n}},$$
+
+where $s$ is the sample SD and $n$ is the number of observations. The SD of
+our simulated means should be close to this formula (they need not match
+exactly because we simulated only 1,000 samples).
+
+```{r}
+tibble(
+  sample_size = c(5, 30),
+  SD_of_simulated_means = c(sd(means_5), sd(means_30)),
+  SE_from_formula = sd(ssrt) / sqrt(c(5, 30))
+)
+```
+
+### Practice 3
+
+Use the formula to predict the SE for samples of 20 and 80 people. If sample
+size becomes four times as large, what happens to the SE? Try the calculation
+in R before answering.
+
+```{r}
+### YOUR CODE HERE ###
+```
+
+## A confidence interval for mean SSRT
+
+We have estimated mean SSRT last week. The lecture used $\bar{x} \pm 1.96 SE$, 
+a Normal approximation. Let's compute the confidence interval for the mean SSRT.
+
+```{r}
+n <- length(ssrt)
+mean_ssrt <- mean(ssrt)
+se_ssrt <- sd(ssrt) / sqrt(n)
+
+mean_ssrt + 1.96 * se_ssrt
+mean_ssrt - 1.96 * se_ssrt
+```
+
+### Practice 4
+
+We can also check the long-run meaning of a confidence interval. The following
+code draws 1,000 samples of 30 from our stand-in population, calculates 
+a confidence interval, and counts how many intervals include the
+stand-in population mean. 
+
+```{r}
+set.seed(2024)
+intervals <- map_dfr(1:1000, ~ {
+  d_ssrt %>%
+    slice_sample(n = 30, replace = TRUE) %>%
+    summarise(mean_SSRT = mean(SSRT),
+              margin = 1.96 * sd(SSRT) / sqrt(n()),
+              lower = mean_SSRT - margin,
+              upper = mean_SSRT + margin)
+})
+
+intervals %>%
+  summarise(proportion = mean(lower <= mean(ssrt) &
+                                upper >= mean(ssrt)))
+```
+
+About what proportion of intervals covered the stand-in population mean?
+Would you expect exactly 0.95 every time you ran the simulation? Why?
+
+## The simplest General Linear Model
+
+A model with only an intercept writes each observation as
+
+$$SSRT_i = \beta_0 + \epsilon_i.$$
+
+$\beta_0$ is the mean SSRT we are estimating; $\epsilon_i$ is the difference
+between a person's SSRT and the model's prediction. `lm()` chooses the
+intercept that minimizes the **sum of squared residuals**. 
+
+```{r}
+m0 <- lm(SSRT ~ 1, data = d)
+coef(m0)
+confint(m0)
+```
+
+### Practice 5
+
+Is the fitted intercept the same as `mean(ssrt)`? 
+
+```{r}
+### YOUR CODE HERE ###
+```
+
+## Adding a predictor: age and SSRT
+
+The lecture added weight as a predictor of height. With our dataset, we can
+instead ask whether mean SSRT changes with age:
+
+$$SSRT_i = \beta_0 + \beta_1 Age_i + \epsilon_i.$$
+
+$\beta_1$ is the expected change in SSRT, in milliseconds, for one extra year
+of age. One participant has no age recorded, so we use complete age and SSRT
+rows for this model. Start by excluding the participant with the missed value 
+in the `Age` column. Save the new dataframe in the `d_age` variable.
+
+```{r}
+### YOUR CODE HERE ###
+```
+
+
+Then fit a regression with `Age` as slope and with an intercept. Save it as 
+`m_age`. 
+
+```{r} 
+### YOUR CODE HERE ###
+```
+
+Now we can look at the estimated parameter values, as well at their confidence
+intervals:
+
+```{r}
+summary(m_age)$coefficients
+confint(m_age)
+```
+
+Let's look at the regression line relative to data:
+
+
+```{r}
+ggplot(d_age, aes(x = Age, y = SSRT)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Age (years)", y = "SSRT (ms)")
+```
+
+The raw intercept predicts SSRT at age zero, outside the ages in this study. This
+is meaningless, as you have no interest in knowing a newborn's SSRT for this
+study. What you can do instead is **center** the age at the mean value. Now
+the intercept estimates mean SSRT at the sample's average age, and the slope
+will remain the same.
+
+```{r}
+d_age <- d_age %>% mutate(Age_centred = Age - mean(Age))
+m_age_centred <- lm(SSRT ~ Age_centred, data = d_age)
+summary(m_age_centred)$coefficients
+```
+
+### Practice 6
+
+Interpret the age slope and its 95% confidence interval in words. What does
+the intercept of the centered model mean? Does the association establish that
+getting older *causes* slower inhibition? Explain your answer.
+
+## Return to the mood comparison
+
+The first practical compared SSRT descriptively across mood conditions. We
+can now estimate the difference with a model. `Neutral` is the reference
+category, so the coefficient for `ConditionNegative` is **Negative minus
+Neutral**, in milliseconds.
+
+```{r}
+m_mood <- lm(SSRT ~ Condition, data = d)
+summary(m_mood)$coefficients
+confint(m_mood)
+```
+
+### Practice 7
+
+Use `group_by()` and `summarise()` to find mean SSRT in each mood condition.
+Subtract the Neutral mean from the Negative mean. Does this equal the
+`ConditionNegative` coefficient?
+
+```{r}
+### YOUR CODE HERE ###
+```
+
+## A quick look at model assumptions
+
+The model assumes approximately Normal errors. A histogram of its residuals
+can reveal strong asymmetry or unusual values. It cannot check independence
+or whether residual spread stays constant across fitted values.
+
+```{r fig.height=3}
+model_checks <- tibble(residual = resid(m_age))
+
+ggplot(model_checks, aes(x = residual)) +
+  geom_histogram(binwidth = 20, boundary = 0, colour = "white") +
+  labs(x = "Residual SSRT (ms)", y = "Number of participants")
+```
+
+### Practice 8
+
+Is the residual distribution roughly symmetric? Are there unusual values?
+
+## Sources
+
+This practical follows the topics in the class on inferential statistics and
+the General Linear Model, and Chapters 2--3 of Daniel Nettle,
+[*From Questions to Knowledge: Data Analysis for Psychology and Behavioural
+Science using R*](https://bookdown.org/danielnettle2/data_analysis/).
+The dataset is from Paál, Carpenter, and Nettle (2015),
+[*Childhood socioeconomic deprivation, but not current mood, is associated
+with behavioural disinhibition in adults*](https://doi.org/10.7717/peerj.964).
