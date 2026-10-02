@@ -1,6 +1,8 @@
 ---
 title: "Introducing R with behavioural inhibition data"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ## Run R code
@@ -18,7 +20,6 @@ we can create a vector of values between 1 and 10.
 
 ```{r}
 x <- 1:10
-x
 ```
 
 You can apply any mathematical operation to this vector of integers.
@@ -35,6 +36,7 @@ Like in Python, you can use `#` to comment things out.
 
 ```{r}
 # 4 + 6
+# c <- 10
 ```
 
 Finally, you can also run Python code inside the same environment, which is 
@@ -51,11 +53,11 @@ print([i ** 2 for i in x])
 `c()` makes a vector. R is case sensitive: `scores` and `Scores` are different names.
 
 ```{r}
-scores <- c(180, 210, 195, 205)  # four SSRT values
+scores <- c(180, 210, 195, 205, 1)  # four SSRT values
 scores
 length(scores)
 mean(scores)
-round(mean(scores), 0)
+round(x=mean(scores), digits=0)
 ```
 
 Try `?mean` in the Console for help.
@@ -75,7 +77,7 @@ a variable/value.
 ```{r}
 class(scores)
 class("Negative")
-class(TRUE)
+class(T)
 ```
 
 `NA` means a missing value. Many functions need `na.rm = TRUE` to skip missing 
@@ -91,12 +93,13 @@ mean(c(180, NA, 205), na.rm = TRUE)
 A data frame has rows for people and columns for variables. `$` selects a
 column; `[row, column]` selects part of a data frame.
 
+
 ```{r}
 people <- data.frame(condition = c("Negative", "Neutral"),
                      ssrt = c(180, 210))
 people
 people$ssrt
-people[1, ]
+people[1, 1]
 ```
 
 ## Load and check the study data
@@ -138,6 +141,7 @@ We can also look just at column names.
 ```{r}
 names(d)
 ```
+
 Or look at snipetts of the data using the `glimpse()` function from the `dplyr` 
 package.
 
@@ -156,6 +160,10 @@ summary(d$SSRT)
 The mood codes are `1` for Negative and `2` for Neutral. `mutate()` adds a
 column.
 
+```{r}
+d$Mood_induction_condition
+```
+
 
 ```{r}
 d <- d %>%
@@ -170,7 +178,7 @@ Check the new labels with `count()`.
 
 ```{r}
 d %>% 
-  count(Condition)
+  count(Sex)
 ```
 
 
@@ -186,7 +194,7 @@ Compare the number of rows with the number of distinct participants.
 `unique()` returns distinct values, and `length()` counts them.
 
 ```{r}
-### YOUR CODE HERE ###
+length(unique(d$Participant))
 ```
 
 
@@ -198,10 +206,8 @@ using `n - 1`.
 
 ```{r}
 d %>%
-  summarise(mean = mean(SSRT, na.rm = TRUE),
-            median = median(SSRT, na.rm = TRUE),
-            sd = sd(SSRT, na.rm = TRUE),
-            variance = var(SSRT, na.rm = TRUE))
+  group_by(Sex) %>% 
+  mutate(mean_age = mean(Age, na.rm = TRUE))
 ```
 
 `group_by()` repeats the summary for each condition. Let's look justn at the mean
@@ -223,7 +229,9 @@ Does the condition with the higher mean SSRT also have the higher median SSRT?
 Use `group_by()` and `summarise()` to calculate both for each condition.
 
 ```{r}
-### YOUR CODE HERE ###
+d %>% 
+  group_by(Condition) %>% 
+  summarise(median_per_condition = median(SSRT, na.rm=F))
 ```
 
 ## Plot SSRT
@@ -235,7 +243,7 @@ empty figure instantiated using the `ggplot()` function.
 
 ```{r}
 ggplot(d, aes(x = SSRT)) + 
-  geom_histogram(binwidth = 20)
+  geom_histogram()
 ```
 
 ### Practice 3
@@ -245,18 +253,19 @@ How does the choice of bin width change what you notice about the SSRT values?
 
 
 ```{r}
-### YOUR CODE HERE ###
+ggplot(d, aes(x = SSRT)) + 
+  geom_histogram(binwidth = 58)
 ```
 
 
 ### Practice 4
 
-Can you make a separate SSRT histogram for each condition? Add
-`facet_wrap(~ Condition)` to the histogram code. Do the two distributions
+Can you make a separate SSRT histogram for each condition? Do the two distributions
 look similar?
 
 ```{r}
-### YOUR CODE HERE ###
+ggplot(d, aes(x = SSRT, fill=Condition)) + 
+  geom_histogram(binwidth = 10)
 ```
 
 ## Source
